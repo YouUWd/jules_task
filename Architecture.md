@@ -95,25 +95,22 @@ flowchart TD
 ### 3.2 系统上下文图 (System Context Diagram)
 系统上下文图帮助评估接口对接的复杂度，明确本系统与外部系统的交互边界。
 
-```text
-                        +--------------------+
-                        |  第三方支付平台    |
-                        | (支付宝/微信支付)  |
-                        +---------+----------+
-                                  | (HTTPS API)
-                                  v
-+----------------+      +--------------------+      +--------------------+
-|  原有旧业务系统|      |                    |      | 短信/邮件网关      |
-|  (PHP/C#)      |<---->|  本企业信息化系统  |----->| (阿里云/腾讯云)    |
-|  (需考虑重构/  |      |  (Java/Spring Boot)|      |                    |
-|   数据同步)    |      |                    |      +--------------------+
-+----------------+      +---------+----------+
-                                  | (OAuth / API)
-                                  v
-                        +--------------------+
-                        | 企业内部协同平台   |
-                        | (企业微信/钉钉)    |
-                        +--------------------+
+```mermaid
+flowchart LR
+    OldSystem["原有旧业务系统\n(PHP/C#)\n需考虑重构/数据同步"]
+
+    subgraph Core["核心系统"]
+        Platform["本企业信息化系统\n(Java/Spring Boot)"]
+    end
+
+    ThirdPartyPay["第三方支付平台\n(支付宝/微信支付)"]
+    SMSGateway["短信/邮件网关\n(阿里云/腾讯云)"]
+    InternalCollab["企业内部协同平台\n(企业微信/钉钉)"]
+
+    OldSystem <-->|HTTP API| Platform
+    Platform -->|HTTPS API| ThirdPartyPay
+    Platform -->|HTTPS API| SMSGateway
+    Platform -->|OAuth / API| InternalCollab
 ```
 
 ## 4. 网络拓扑规划 (Network Topology)
@@ -135,31 +132,48 @@ flowchart TD
   * 部署堡垒机/跳板机、GitLab、CI/CD 服务器、Prometheus、日志收集等。
   * 运维人员通过 VPN 接入内网，再经过堡垒机访问其他各区服务器进行运维操作。
 
-### 4.2 拓扑图示意 (文本描述)
+### 4.2 拓扑图示意 (Network Topology Diagram)
 
-```text
-[互联网 Internet]
-      │ (HTTPS: 443)
-      ▼
-[云防火墙 WAF / DDoS 防护]
-      │
-      ▼
-[DMZ区 / 负载均衡 SLB / Nginx] (公网IP)
-      │ (内网反向代理: HTTP)
-      ▼
-[应用服务区 (私有网络 VPC - Subnet 1)]
-  ├─ 前端服务 (Nginx)
-  ├─ API 网关 (Spring Cloud Gateway)
-  └─ 后端应用服务集群 (Spring Boot Apps)
-      │ (内网 RPC / JDBC / Redis Protocol)
-      ▼
-[数据与中间件区 (私有网络 VPC - Subnet 2)]
-  ├─ 数据库集群 (MySQL 主从)
-  ├─ 缓存集群 (Redis Cluster)
-  └─ 消息队列 (Kafka Cluster)
+```mermaid
+flowchart TD
+    Internet["互联网 Internet"]
 
-[运维管理区 (私有网络 VPC - Subnet 3)]
-  ├─ 堡垒机 (仅允许授权 VPN/IP 访问)
-  ├─ CI/CD (Jenkins/GitLab)
-  └─ 监控告警系统 (Prometheus+Grafana)
+    subgraph DMZ["DMZ区 (分配公网IP)"]
+        WAF["云防火墙 WAF / DDoS 防护"]
+        SLB["云负载均衡 SLB"]
+    end
+
+    subgraph VPC["私有网络 (VPC)"]
+        subgraph AppZone["应用服务区 (Subnet 1 - 无公网IP)"]
+            Nginx["前端服务 / 反向代理\n(Nginx)"]
+            Gateway["API 网关\n(Spring Cloud Gateway)"]
+            SpringBoot["后端应用服务集群\n(Spring Boot Apps)"]
+        end
+
+        subgraph DataZone["数据与中间件区 (Subnet 2 - 最高安全级别)"]
+            DB["数据库集群\n(MySQL 主从)"]
+            Cache["缓存集群\n(Redis Cluster)"]
+            MQ["消息队列\n(Kafka Cluster)"]
+        end
+
+        subgraph OpsZone["运维管理区 (Subnet 3)"]
+            Bastion["堡垒机\n(仅允许授权 VPN/IP 访问)"]
+            CICD["CI/CD 服务器\n(Jenkins/GitLab)"]
+            Monitor["监控告警系统\n(Prometheus+Grafana)"]
+        end
+    end
+
+    Internet -- HTTPS: 443 --> WAF
+    WAF --> SLB
+    SLB -- 内网 HTTP --> Nginx
+    Nginx --> Gateway
+    Gateway --> SpringBoot
+
+    SpringBoot -- 内网 RPC/JDBC --> DB
+    SpringBoot -- Redis Protocol --> Cache
+    SpringBoot -- 内网 TCP --> MQ
+
+    Bastion -.-> AppZone
+    Bastion -.-> DataZone
+    OpsZone -.-> AppZone
 ```
