@@ -1,1 +1,45 @@
-name: Markdown to PDF\n\non: [push]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n    - name: Checkout code\n      uses: actions/checkout@v2\n\n    - name: Convert Markdown to PDF\n      uses: docker://pandoc/latex\n      with:\n        args: [ \'--pdf-engine=xelatex\', \'--output=output.pdf\', \'input.md\']\n\n    - name: Upload generated PDF\n      uses: actions/upload-artifact@v2\n      with:\n        name: output.pdf\n        path: output.pdf\n
+name: Convert Markdown to PDF
+
+on:
+  push:
+    paths:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Convert Markdown Files to PDF using Docker
+        run: |
+          docker run --rm -v $(pwd):/data pandoc/latex:latest /bin/bash -c '
+            for file in /data/*.md; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                echo "Converting $filename..."
+                pandoc "$file" \
+                  -o "/data/${filename%.md}.pdf" \
+                  --pdf-engine=xelatex \
+                  -V CJKmainfont="Noto Serif CJK SC" \
+                  -V geometry:margin=2cm \
+                  --toc \
+                  --number-sections
+              fi
+            done
+          ';
+      
+      - name: Upload PDFs to Repository
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add *.pdf
+            git commit -m "docs: auto-generate PDF files from Markdown [skip ci]"
+            git push
+          fi
