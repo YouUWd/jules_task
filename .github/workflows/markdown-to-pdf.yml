@@ -1,4 +1,5 @@
-name: Markdown to PDF Converter
+name: Convert Markdown to PDF
+
 on:
   push:
     paths:
@@ -10,32 +11,32 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended texlive-latex-extra
       
-      - name: Install dependencies
-        run: npm install -g markdown-pdf
-      
-      - name: Convert all MD files to PDF
+      - name: Convert Markdown Files to PDF
         run: |
           for file in *.md; do
             if [ -f "$file" ]; then
-              echo "Converting $file to PDF..."
-              markdown-pdf "$file" -o "${file%.md}.pdf"
+              echo "Converting $file..."
+              pandoc "$file" -o "${file%.md}.pdf" \
+                --pdf-engine=xelatex \
+                -V CJKmainfont="WenQuanYi Zen Hei" \
+                -V geometry:margin=2cm
             fi
           done
       
-      - name: Commit and push PDF files
+      - name: Upload PDFs
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
           git add *.pdf
-          git diff --cached --quiet || git commit -m "Auto-generate PDF from Markdown files [skip ci]"
+          git diff --cached --quiet || git commit -m "docs: auto-generate PDF files from Markdown [skip ci]"
           git push
