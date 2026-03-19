@@ -1,0 +1,68 @@
+name: Convert Markdown to PDF
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Security.md'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Security.md'
+  workflow_dispatch:
+
+jobs:
+  convert-to-pdf:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc wkhtmltopdf xvfb fonts-noto-cjk
+
+      - name: Convert Markdown to PDF
+        run: |
+          pandoc Security.md \
+            --pdf-engine=wkhtmltopdf \
+            --variable margin-top=20 \
+            --variable margin-bottom=20 \
+            --variable margin-left=20 \
+            --variable margin-right=20 \
+            -o Security.pdf
+
+      - name: Upload PDF as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: Security-PDF
+          path: Security.pdf
+          retention-days: 30
+
+      - name: Commit and push PDF
+        if: github.event_name == 'push'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add Security.pdf
+          git commit -m "docs: auto-generate Security.pdf from Security.md [skip ci]" || echo "No changes to commit"
+          git push
+
+      - name: Create Pull Request comment with download link
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ **PDF 生成成功！**\n\n📄 您可以在此 PR 的 Artifacts 中下载 `Security-PDF.zip`\n\n💡 [查看 Actions 运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+            })
