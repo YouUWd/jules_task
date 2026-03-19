@@ -1,4 +1,4 @@
-name: Convert Markdown to PDF
+name: Convert Markdown to PDF with Mermaid
 
 on:
   push:
@@ -27,17 +27,18 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pandoc wkhtmltopdf xvfb fonts-noto-cjk
+          sudo apt-get install -y chromium-browser npm fonts-noto-cjk
+
+      - name: Install npm packages
+        run: |
+          npm install -g @mermaid-js/mermaid-cli markdown-it md-to-pdf
 
       - name: Convert Markdown to PDF
         run: |
-          pandoc Security.md \
-            --pdf-engine=wkhtmltopdf \
-            --variable margin-top=20 \
-            --variable margin-bottom=20 \
-            --variable margin-left=20 \
-            --variable margin-right=20 \
-            -o Security.pdf
+          npx md-to-pdf --launch-args='["--no-sandbox"]' Security.md
+
+      - name: List generated files
+        run: ls -lh *.pdf || echo "No PDF found"
 
       - name: Upload PDF as artifact
         uses: actions/upload-artifact@v4
@@ -52,10 +53,10 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add Security.pdf
-          git commit -m "docs: auto-generate Security.pdf from Security.md [skip ci]" || echo "No changes to commit"
+          git commit -m "docs: auto-generate Security.pdf with Mermaid diagrams [skip ci]" || echo "No changes to commit"
           git push
 
-      - name: Create Pull Request comment with download link
+      - name: Create PR comment
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
@@ -64,5 +65,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **PDF 生成成功！**\n\n📄 您可以在此 PR 的 Artifacts 中下载 `Security-PDF`\n\n💡 [查看 Actions 运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+              body: '✅ **PDF 生成成功（含完整拓扑图）！**\n\n📄 Artifacts 中可下载 `Security-PDF`\n\n🔗 [查看运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
             })
