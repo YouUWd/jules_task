@@ -1,119 +1,162 @@
-# 企业信息化平台安全规范文档
+# 企业信息化平台纵深安全防御与 DevSecOps 治理规范
 
-## 1. 概述
-在企业信息化平台的建设中，安全是重中之重。本文档从**应用安全**、**数据安全**、**网络与基础设施安全**以及**运维安全**四个维度，制定了基于 Spring Boot 3.4 和 JDK 17 架构的安全规范与保障措施，确保平台免受内部和外部的威胁。
+## 1. 基础设施纵深防御体系 (等保 2.0 标准)
 
-## 2. 应用安全 (Application Security)
+依托《网络安全等级保护基本要求2.0》，本架构贯彻**“一个中心，三重防御”**的战略思想，彻底告别单点边界防护的局限性。所有计算资源、数据流转、运维权限均受到等保合规管控。
 
-### 2.1 身份认证与授权 (Authentication & Authorization)
-* **框架选型**: 采用 **Spring Security** (推荐结合 OAuth 2.0 / OIDC 或 JWT 机制)。
-* **多因素认证 (MFA)**: 针对高权限用户（如系统管理员、财务人员），强制开启短信验证码、动态令牌 (Google Authenticator) 等二次验证。
-* **密码策略**:
-  * 严禁明文存储密码。必须使用强哈希算法（如 **BCrypt**、Argon2）加盐单向加密存储。
-  * 强制用户设置复杂密码（包含大小写字母、数字、特殊字符，长度至少 8 位）。
-  * 实施密码过期强制修改策略，并限制新旧密码相同。
-* **会话管理**:
-  * 若使用 Session，须防范 Session 固定攻击（Spring Security 默认支持 `changeSessionId`）。
-  * 若使用 JWT，需设置合理的过期时间（Access Token 短期，Refresh Token 长期），并设计 Token 吊销机制（如借助 Redis 存储黑名单）。
-* **权限控制模型**: 采用 **RBAC** (基于角色的访问控制) 或更细粒度的 **ABAC** (基于属性的访问控制)，确保最小权限原则。所有 API 必须经过鉴权拦截（如使用 `@PreAuthorize`）。
+### 1.1 纵深防御网络拓扑图 (Defense-in-Depth Topology)
 
-### 2.2 输入验证与防注入 (Input Validation & Injection Prevention)
-* **XSS 防护**:
-  * 后端接口必须对用户输入进行严格校验（如使用 Hibernate Validator 的 `@NotBlank`, `@Pattern` 等）。
-  * 响应内容设置适当的 `Content-Type` 和 `X-XSS-Protection` 头。
-  * 前端框架（如 Vue/React）默认具有一定的防范能力，但需注意避免使用 `v-html` 或 `dangerouslySetInnerHTML` 渲染不受信任的内容。
-* **SQL 注入防护**:
-  * 严禁字符串拼接构造 SQL。
-  * 强制使用 MyBatis 的 `#{}` 预编译占位符或 Spring Data JPA 的参数绑定机制。
-* **命令注入防范**: 避免应用直接调用系统底层命令（如 `Runtime.exec`）；若必须调用，须对输入参数进行严格过滤和白名单校验。
-* **CSRF 防护**: 对于非前后端分离的系统，必须开启 Spring Security 的 CSRF 防护机制（验证 CSRF Token）。对于前后端分离架构（基于 Token），可通过校验 HTTP Referer/Origin 或 SameSite Cookie 策略进行防范。
+```mermaid
+flowchart TD
+    Internet((全球互联网公共网络))
 
-### 2.3 越权与业务逻辑安全 (Insecure Direct Object References & Business Logic)
-* **横向越权 (IDOR)**: 用户只能操作属于自己的资源。API 接口在处理数据前，必须校验请求的资源 ID 是否与当前登录用户的 ID（或所属组织 ID）匹配。
-* **纵向越权**: 普通用户严禁访问管理员专用的接口（如 `/api/admin/**`）。通过 URL 路径拦截和方法级权限控制双重保障。
-* **敏感操作风控**: 涉及资金转账、核心数据修改等操作，需增加人机验证（验证码、滑块）或限流措施，防止重放攻击和自动化脚本滥用。
+    subgraph Security_Boundary [等保防御层一：安全区域边界]
+        Anti_DDoS["高防IP服务<br>流量清洗与泛洪防御"]
+        WAF_Cluster["WAF 集群<br>七层应用深度检测"]
+        SSL_Cert["SSL/TLS 证书卸载"]
+    end
 
-## 3. 数据安全 (Data Security)
+    subgraph VPC_Network ["等保防御层二：安全通信网络 (零信任隔离)"]
+        SLB["应用负载均衡<br>流量分发与高可用路由"]
+        Cloud_Firewall{"企业级云防火墙<br>南北出入管控 / 东西向微隔离"}
 
-### 3.1 数据加密 (Data Encryption)
-* **传输中数据 (Data in Transit)**: 所有对外服务（Web、API、App）强制使用 **HTTPS (TLS 1.2/1.3)** 协议。内网服务间通信（如服务调用、数据库连接）建议开启 TLS/SSL 加密。
-* **静态数据 (Data at Rest)**:
-  * 敏感个人信息（PII，如身份证号、手机号、银行卡号）在数据库中必须**加密存储**（如使用 AES-256 对称加密）。
-  * 密钥管理必须独立于代码与数据库，建议使用专用的密钥管理服务 (KMS) 或安全的配置中心（如 HashiCorp Vault）。
+        subgraph Compute_Env ["等保防御层三：安全计算环境"]
+            ECS_Web["接入与网关集群<br>特定端口放行"]
+            ECS_App["核心业务微服务集群<br>工作负载无代理防护 (CWPP)"]
+            DB_Cluster["受保护数据区集群<br>强身份认证与落盘加密"]
+        end
+    end
 
-### 3.2 数据脱敏 (Data Masking)
-* **展示层脱敏**: 敏感数据在返回前端展示或输出到日志时，必须进行掩码处理（如：`138****5678`、`李*`）。
-* **测试环境数据**: 开发和测试环境禁止使用未脱敏的生产环境真实数据。必须通过数据脱敏工具或脚本进行混淆处理后方可导入。
+    subgraph Sec_Management ["等保核心：安全管理中心"]
+        Cloud_Sec_Center["云安全中心<br>统一威胁态势感知与自动化响应"]
+        Bastion_Host["堡垒机系统<br>运维MFA多因素认证与指令审计"]
+        DB_Audit["数据库审计系统<br>核心数据流转溯源与脱敏分析"]
+    end
 
-### 3.3 数据备份与恢复 (Data Backup & Recovery)
-* **冷备与热备**: 核心数据库（如 MySQL）配置主从高可用集群（热备），并结合定时全量备份 + 增量 Binlog 备份（冷备），异地保存至 OSS 或磁带库。
-* **定期演练**: 每季度至少进行一次数据恢复演练，验证备份数据的可用性和恢复时长（RTO/RPO）。
+    Internet -->|海量异常与正常混合流量| Anti_DDoS
+    Anti_DDoS -->|剔除泛洪攻击的净流量| WAF_Cluster
+    WAF_Cluster -->|HTTPS 强加密传输| SLB
+    SLB --> Cloud_Firewall
 
-## 4. 网络与基础设施安全 (Network & Infrastructure Security)
+    Cloud_Firewall -->|严格白名单微隔离策略| ECS_Web
+    ECS_Web -->|特定端口与应用协议放行| ECS_App
+    ECS_App -->|强身份认证与连接池管理| DB_Cluster
 
-### 4.1 网络与安全拓扑图 (Network and Security Topology Diagram)
-网络与安全拓扑图直接决定了网络隔离级别、公网IP数量、NAT网关配置以及安全产品的采购清单。
-
-```text
-[ 互联网 Internet ]
-      |
-      | DDoS 攻击清洗 (高防 IP, 拦截大流量攻击)
-      v
-[ WAF (Web 应用防火墙) ] --------> [ 异常流量日志 / 云监控 ]
-      | (拦截 OWASP Top 10, SQLi, XSS 等)
-      |
-      +-------------------------------------------------------------+
-      |  VPC (Virtual Private Cloud - 企业专有网络)                 |
-      |                                                             |
-      |  +-------------------------------------------------------+  |
-      |  | 公网接入区 (DMZ Subnet)                               |  |
-      |  | (分配公网 IP, 安全组仅开通 80/443, 限制 ICMP)         |  |
-      |  |                                                       |  |
-      |  |  [ 云负载均衡 SLB ]                                   |  |
-      |  |          |                                            |  |
-      |  |  [ 堡垒机 / 跳板机 ] (仅允许办公网特定 IP 访问)       |  |
-      |  |          | (通过内网 VPN 协议)                        |  |
-      |  +----------+--------------------------------------------+  |
-      |             | 内网 HTTP/TCP 通信                            |
-      |  +----------+--------------------------------------------+  |
-      |  | 应用服务区 (Private Subnet 1)                         |  |
-      |  | (无公网 IP, 通过 NAT 网关出网, 接受 DMZ 流量)         |  |
-      |  |                                                       |  |
-      |  |  [ Nginx 集群 ] -> [ Spring Cloud Gateway 网关 ]      |  |
-      |  |          |                                            |  |
-      |  |  [ 各大 Spring Boot 微服务节点 ]                      |  |
-      |  |  [ 日志收集 Agent (Filebeat) ]                        |  |
-      |  +----------+--------------------------------------------+  |
-      |             | 内网 RPC/JDBC/Redis 协议通信                  |
-      |  +----------+--------------------------------------------+  |
-      |  | 数据与中间件区 (Private Subnet 2 / 核心数据核心区)    |  |
-      |  | (最高安全级别, 完全断开公网出入站, 仅限应用区访问)    |  |
-      |  |                                                       |  |
-      |  |  [ MySQL 主从集群 ] (仅开放 3306 端口给应用区)        |  |
-      |  |  [ Redis 集群 ]     (仅开放 6379 端口给应用区)        |  |
-      |  |  [ Kafka 消息队列]  (仅开放 9092 端口给应用区)        |  |
-      |  +-------------------------------------------------------+  |
-      +-------------------------------------------------------------+
+    Cloud_Sec_Center -.->|Agent 资产配置核查/虚拟补丁| ECS_Web
+    Cloud_Sec_Center -.->|Agent 资产配置核查/虚拟补丁| ECS_App
+    Cloud_Sec_Center -.->|全网流量镜像与全局态势感知| Cloud_Firewall
+    Cloud_Sec_Center -.->|自动化威胁阻断与策略集中下发| WAF_Cluster
 ```
 
-### 4.2 边界防护与隔离
-* **防火墙与 WAF**:
-  * 部署 Web 应用防火墙 (WAF)，拦截常见的 Web 攻击（OWASP Top 10）、恶意爬虫及 CC 攻击。
-  * 在云环境下，合理配置安全组 (Security Group) 或网络 ACL，严格控制进出流量。
-* **VPC 与子网隔离**: 采用多层架构隔离（参考上述网络拓扑图）。数据库、缓存等核心资产必须放置在**私有子网**，严禁绑定公网 IP。
-* **DDoS 防护**: 针对核心公网入口（如 SLB、网关），配置云原生的 DDoS 高防服务。
+### 1.2 三重防线解析
+* **第一重：安全区域边界（抵御外部）**：高防清洗抵御泛洪攻击；WAF 利用双引擎（海量日志深度学习 + 主动防御）和 Anti-Bot 拦截漏洞攻击、机器扫描。
+* **第二重：安全通信网络（零信任隔离）**：利用新一代云原生防火墙（Cloud Firewall），深入 VPC 内部实现**东西向横向移动管控（Micro-segmentation）**。引入“虚拟补丁（Virtual Patching）”技术在网络层拦截 0-day 利用。
+* **第三重：安全计算环境（端点与工作负载）**：通过云安全中心（CWPP/XDR）轻量级 Agent 保护虚拟机、容器与 Serverless。核心是对抗勒索软件的“三重防护”闭环（特征拦截、诱饵监测、极速快照恢复）。
 
-### 4.2 容器与操作系统安全
-* **主机安全**: 及时修复操作系统漏洞，关闭不必要的端口和服务，定期进行安全基线检查。
-* **镜像安全扫描**: 在 CI/CD 流程中引入容器镜像安全扫描工具（如 Trivy, Clair），拦截包含已知高危漏洞（CVE）的基础镜像和第三方依赖组件。
-* **最小化容器环境**: 生产环境推荐使用无 Shell 且体积较小的基础镜像（如 `distroless` 或 `alpine`），降低攻击面。
+---
 
-## 5. 运维安全与监控审计 (Operations Security & Auditing)
+## 2. 数据安全全生命周期治理体系
 
-### 5.1 访问控制与堡垒机
-* **运维入口控制**: 所有服务器和数据库的运维操作必须通过统一的**堡垒机 (跳板机)** 进行，并开启操作录屏和命令审计。
-* **权限回收**: 员工离职或转岗时，应在 24 小时内回收所有相关系统的访问权限（VPN、堡垒机、GitLab 等）。
+面对《数据安全法》与《个人信息保护法》的强合规要求，数据安全的重心从边界转向“资产可视”与“流转可控”。
 
-### 5.2 安全日志与监控体系
-* **集中式日志分析**: 将 Nginx 访问日志、WAF 日志、应用系统日志、数据库审计日志统一收集至 ELK 集群或云日志服务，设置异常关键字告警规则。
-* **关键行为审计**: 系统应记录所有关键业务操作（如登录、登出、密码修改、数据删除/导出），包含操作人、时间、IP 地址、操作前后的数据快照，以便事后追溯。
+### 2.1 全场景数据防护架构流程图 (Data Lifecycle Security)
+
+```mermaid
+flowchart LR
+    subgraph Data_Discovery [态势感知:数据资产盘点与分类分级]
+        DB[(核心关系型数据库)]
+        OSS_Storage["云存储对象桶<br>非结构化数据"]
+        BigData[大数据计算分析平台]
+        DSC["数据安全中心 (DSC)"]
+    end
+
+    subgraph Data_Protection [核心加固:底层加密与凭据托管保护]
+        KMS["密钥管理服务 (KMS)"]
+        Transparent_Encryption[云产品底层落盘透明加密]
+        Column_Encryption[数据库内核级字段/列加密]
+    end
+
+    subgraph Data_Usage [合规流转:应用使用与传输过程安全]
+        API_Security[API 统一安全网关]
+        Dynamic_Masking[业务请求实时动态数据脱敏]
+        Watermark[全终端多媒体隐形数字水印溯源]
+        SASE["零信任安全访问服务边缘"]
+    end
+
+    DB --> DSC
+    OSS_Storage --> DSC
+    BigData --> DSC
+    DSC -->|输出合规敏感数据映射目录| KMS
+
+    KMS -.->|集成外部硬件密码机 HSM 或 BYOK| Transparent_Encryption
+    KMS -.->|细粒度基于身份的解密权限控制| Column_Encryption
+
+    Column_Encryption --> API_Security
+    API_Security -->|联动分析识别大批量核心数据异常外发| Dynamic_Masking
+    Dynamic_Masking --> Watermark
+    Watermark --> SASE
+```
+
+### 2.2 核心治理模块
+* **资产可视 (Data Security Center - DSC)**：自动化全量数据扫描，依托 NLP 和特征模型，输出企业“数据资产分布拓扑图”与敏感数据目录。
+* **存储加固 (Data at Rest)**：
+  * **落盘透明加密**：通过 KMS 对 ECS、RDS、OSS 一键式加密。
+  * **列级加密 (Column-level Encryption)**：基于身份正交权限控制（如 DBA 仅能查询不可读密文，APP 账号可解密），杜绝删库或数据大批量窃取。
+* **流转可控 (Data in Transit & Usage)**：
+  * **API 异常监控**：深度旁路解析跨会话业务流量，一旦 Response 返回过度敏感信息，立刻熔断 API。
+  * **零信任接入 (SASE)**：全面废除“默认信任”，所有远程办公请求需动态身份核验与终端健康检查。
+  * **数字水印与防泄露 (DLP)**：应用隐形数字水印，监控并追溯屏幕截取、外传分享事件。
+
+---
+
+## 3. DevSecOps 安全左移与自动化变更闭环
+
+针对 70% 的重大生产事故源于应用变更的历史教训，必须将安全能力无缝内嵌至软件交付全生命周期。
+
+### 3.1 自动化流水线生命周期图 (DevSecOps Pipeline)
+
+```mermaid
+sequenceDiagram
+    participant Dev as 研发工程师 (Developer)
+    participant Codeup as 企业级代码托管 (Code Repo)
+    participant CI_Sec as 持续集成与安全扫描 (CI / Sec Check)
+    participant Artifacts as 制品库与镜像防毒 (Registry)
+    participant Prod_K8s as 生产集群部署 (K8s Prod)
+
+    Dev->>Codeup: 提交业务代码分支 (Git Push Feature_Branch)
+    Codeup->>CI_Sec: 触发代码合并审查请求 (Merge Request)
+
+    rect rgb(230, 245, 255)
+        Note over CI_Sec: 核心流程：安全左移自动化卡点门禁
+        CI_Sec->>CI_Sec: SAST 深度静态代码安全性检测 (覆盖主流语言)
+        CI_Sec->>CI_Sec: AK/SK 敏感凭证及硬编码密码全局防泄漏扫描
+        CI_Sec->>CI_Sec: SCA 软件成分分析 (检测开源依赖包 CVE 漏洞)
+        CI_Sec->>CI_Sec: 大模型 AI 智能代码语义评审 (探查逻辑/并发漏洞)
+    end
+
+    alt 扫描触碰红线或发现高危漏洞 (Critical/High Vulnerability)
+        CI_Sec-->>Dev: 强制拦截合并！返回带行级修复建议的安全报告
+    else 扫描全部通过质量与安全卡点
+        CI_Sec->>Codeup: 批准审查，自动合并至主干分支 (Master)
+        Codeup->>Artifacts: 触发自动编译、构建与 Docker 镜像打包
+        Artifacts->>Artifacts: 镜像底层操作系统与组件 CVE 安全扫描
+        Artifacts->>Prod_K8s: 触发 Kubernetes 蓝绿/金丝雀灰度发布
+        Prod_K8s-->>Artifacts: 持续监控新版本业务健康度及 CPU/Mem 指标
+    end
+```
+
+### 3.2 交付卡点控制
+* **资产极度保护**：企业代码库开启跨可用区三副本灾备，结合大语言模型 (AI) 助手实现毫秒级深层并发、逻辑漏洞评审。
+* **CI 安全门禁**：强制 SAST/SCA 检测，扫描出明文硬编码或开源包 CVE 漏洞超出阈值时，自动熔断流水线编译。
+* **CD 无损发布**：依托 APM 指标监控，任何引发 5xx 错误或延迟激增的 Kubernetes 灰度发布，一键秒级回滚。
+
+---
+
+## 4. 安全管理制度与应急演练保障体系
+
+技术的长治久安离不开严苛的内部管理体系（内控制度）：
+
+* **动态身份管理与访问控制**：强制推行最小权限原则与 **MFA 多因素认证**。严禁共享高权限账号。人员离职当天（或几小时内）吊销所有生产与 VPN 访问权限。
+* **红线合规审计**：严禁明文敏感数据外发，跨部门联调必须使用模糊处理的“伪造测试数据”。
+* **日志留存合规**：满足公安部监管要求，核心日志接入集中审计平台，强制保存 **至少180天**，用于渗透回溯与司法取证。
+* **变更管控与红蓝对抗**：所有非紧急生产变更必须在线上提交流程，在低峰期（凌晨）指定窗口维护。每季度定期开展实战化内部红蓝对抗演练与全员反钓鱼测试。
