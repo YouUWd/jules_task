@@ -65,8 +65,17 @@ flowchart TD
                     MySQL_Slave1[("MySQL 从库 1\n(8核32G, 只读分离)")]
                     MySQL_Slave2[("MySQL 从库 2\n(8核32G, 只读分离)")]
 
-                    Redis[("Redis Cluster\n(8核32G集群, 强密码认证)")]
-                    Kafka[("Kafka + ZK/KRaft\n(8核32G集群, 高吞吐磁盘)")]
+                    subgraph RedisCluster["Redis 缓存集群"]
+                        Redis1[("Redis 主节点\n(8核32G)")]
+                        Redis2[("Redis 从节点 1\n(8核32G)")]
+                        Redis3[("Redis 从节点 2\n(8核32G)")]
+                    end
+
+                    subgraph KafkaCluster["Kafka 消息队列集群"]
+                        Kafka1[("Kafka Broker 1\n(8核32G)")]
+                        Kafka2[("Kafka Broker 2\n(8核32G)")]
+                        Kafka3[("Kafka Broker 3\n(8核32G)")]
+                    end
                 end
             end
 
@@ -93,12 +102,12 @@ flowchart TD
             Nginx2 --> AppN
 
             App1 -.-> MySQL_Master
-            App1 -.-> Redis
-            App1 -.-> Kafka
+            App1 -.-> Redis1
+            App1 -.-> Kafka1
 
             App2 -.-> MySQL_Master
-            App2 -.-> Redis
-            App2 -.-> Kafka
+            App2 -.-> Redis2
+            App2 -.-> Kafka2
 
             MySQL_Master -.->|Binlog同步| MySQL_Slave1
             MySQL_Master -.->|Binlog同步| MySQL_Slave2
