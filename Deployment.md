@@ -1,7 +1,7 @@
 # 企业信息化平台部署参考文档（等保 2.0 合规版）
 
 ## 1. 概述
-本文档描述了基于 JDK 17 和 Spring Boot 3.4 构建的企业信息化平台的部署架构。为满足《网络安全等级保护基本要求2.0》（等保2.0）的强合规监管，本部署方案严格贯彻“一个中心，三重防御”的纵深防御体系。文档包含基于等保要求的服务器资源分配建议、环境划分以及合规的持续集成与持续交付（CI/CD）流程设计。
+本文档描述了企业信息化平台的基础设施部署架构方案。为满足《网络安全等级保护基本要求2.0》（等保2.0）的强合规监管，本部署方案严格贯彻“一个中心，三重防御”的纵深防御体系。文档提供了一套通用、不局限于特定编程语言的技术组件部署基准、环境划分规范，以及合规的持续集成与持续交付（CI/CD）流程设计。
 
 ## 2. 部署环境规划与安全隔离
 
@@ -55,9 +55,9 @@ flowchart TD
                 end
 
                 subgraph AppTier["等保防御层三：安全计算环境 (应用微隔离)"]
-                    App1["Spring Boot 节点 1\n(ECS: 8核16G, CWPP无代理防护)"]
-                    App2["Spring Boot 节点 2\n(ECS: 8核16G, CWPP无代理防护)"]
-                    AppN["Spring Boot 节点 N\n(按需弹性伸缩)"]
+                    App1["核心业务应用节点 1\n(ECS: 8核16G, CWPP无代理防护)"]
+                    App2["核心业务应用节点 2\n(ECS: 8核16G, CWPP无代理防护)"]
+                    AppN["核心业务应用节点 N\n(按需弹性伸缩)"]
                 end
 
                 subgraph DataTier["等保防御层三：核心数据计算环境 (透明加密)"]
@@ -123,11 +123,11 @@ flowchart TD
 * **数量**: 至少 2 台 (主备/双活架构)
 
 ### 3.2 核心应用计算区
-* **角色**: Spring Boot 3.4 后端应用 (利用 JDK 17 优化)
+* **角色**: 后端微服务与业务应用计算节点 (语言无关，如 Java/Node.js/Go)
 * **等保要求**: 工作负载部署端点防护平台（CWPP/云安全中心），执行严格的 OS 漏洞扫描与基线核查。
 * **规格建议**: 8核 CPU / 16GB 或 32GB 内存 / 100GB 系统盘
 * **数量**: 至少 3-4 台 (视微服务拆分和预估并发量而定，支持弹性扩缩容)
-* **配置提示**: JVM 参数根据 JDK 17 的特性调整 (如 `-XX:+UseZGC` 或 G1，`-Xms8g -Xmx8g`)。
+* **配置提示**: 无论采用何种运行时环境（JVM、V8 引擎或 Go Runtime），资源配比应严格控制在计算密集型/内存均衡型（vCPU:RAM ≈ 1:2 或 1:4），并根据运行时的垃圾回收（GC）机制预留充足的系统开销。
 
 ### 3.3 核心数据存储区
 * **角色**: MySQL 8.0+ (一主多从)
@@ -161,17 +161,15 @@ flowchart TD
 ### 4.1 DevSecOps 总体流程
 代码提交 (云效代码管理) -> 触发构建 (云效流水线) -> **核心卡点: 静态代码扫描 (SAST) + 敏感凭证防泄漏 (AK/SK) (云效代码检测)** -> 单元测试 -> 构建 Docker 镜像 -> **核心卡点: 容器镜像 CVE 漏洞扫描** -> 推送镜像仓库 (制品仓库Packages) -> 严格工单审批触发部署 -> Kubernetes/Swarm 拉取镜像更新服务 -> 自动化验证与态势监控。
 
-### 4.2 Spring Boot 3.4 与 JDK 17 的部署优化
-由于使用了 Spring Boot 3.x，强烈建议采用容器化部署（Docker/Kubernetes）。
+### 4.2 应用容器化构建与部署安全优化
+无论底层业务应用采用何种技术栈，均强烈要求全面采用容器化部署（Docker/Kubernetes）以实现计算资源的标准化与弹性隔离。
 
-1. **多阶段构建 (Multi-stage Build)**:
-   在 `Dockerfile` 中使用一个包含 JDK/Maven(或Gradle) 的基础镜像进行编译打包，再将产出的 JAR 拷贝到一个仅包含 JRE 17 (如 Alpine 瘦身版) 的极简运行环境镜像中。此举不仅大幅减小最终镜像体积，更能显著降低底层 OS 库的暴露攻击面（缩小 CVE 漏洞基数）。
-2. **Spring Boot Native Image (可选)**:
-   Spring Boot 3.x 深度整合了 GraalVM，可通过 AOT 编译生成 Native Image（原生二进制可执行文件）。
-   * 优势：启动时间极快（毫秒级），内存占用极低。由于移除了大量未使用的 JVM 特性，安全攻击面进一步收敛。
-   * 劣势：编译时间长，部分动态特性（如复杂的反射、CGLib代理）可能需要额外配置。
-3. **分层 JAR (Layered Jar)**:
-   利用 Spring Boot 的 Layered Jar 特性，在构建 Docker 镜像时将依赖库（dependencies）和业务代码（application）分层打包。由于依赖库变动频率低，可充分利用 Docker 缓存，加快持续集成的构建速度。
+1. **多阶段构建 (Multi-stage Build) 与镜像极简原则**:
+   在 `Dockerfile` 中，必须将带有编译工具链（如 JDK/Maven, Node+NPM, Go compiler）的构建阶段（Builder Stage）与最终的运行阶段（Runtime Stage）彻底分离。生产运行镜像必须采用 Alpine Linux 或 Google Distroless 等极简操作系统基础镜像。此举不仅能将镜像体积缩小高达 90%，更能从根本上消除非必要的 OS 包管理器与 Shell 环境，极大收敛底层已知 CVE 漏洞基数。
+2. **最小权限原则与非 Root 运行 (Non-Root User)**:
+   在容器运行态，严格禁止应用进程使用默认的 `root` 用户运行。`Dockerfile` 必须显式声明并切换至低权限的业务用户（如 `USER appuser`）。结合 Kubernetes 的 Security Context，强制禁止容器提权（`allowPrivilegeEscalation: false`）并配置只读根文件系统（`readOnlyRootFilesystem: true`），防止被入侵后植入后门木马。
+3. **依赖分离与构建缓存层优化**:
+   在构建流程中，应优先拷贝依赖描述文件（如 `pom.xml`, `package.json`, `go.mod`）并执行依赖库下载安装；随后再拷贝频繁变动的业务源代码层。这种依赖分离技术能最大程度命中 Docker 构建引擎的缓存（Layer Cache），显著提升 CI/CD 流水线的重复构建速度。
 
 ### 4.3 自动化运维与部署工具链
 本平台依托阿里云云效作为官方 DevSecOps 工具链：
