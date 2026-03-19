@@ -93,13 +93,13 @@ flowchart TD
             SLB --> Nginx1
             SLB --> Nginx2
 
-            Nginx1 --> App1
-            Nginx1 --> App2
-            Nginx1 --> AppN
+            Nginx1 -.-> App1
+            Nginx1 -.-> App2
+            Nginx1 -.-> AppN
 
-            Nginx2 --> App1
-            Nginx2 --> App2
-            Nginx2 --> AppN
+            Nginx2 -.-> App1
+            Nginx2 -.-> App2
+            Nginx2 -.-> AppN
 
             App1 -.-> MySQL_Master
             App1 -.-> Redis1
