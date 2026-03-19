@@ -40,7 +40,7 @@ jobs:
             -o Security.pdf
 
       - name: Upload PDF as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Security-PDF
           path: Security.pdf
@@ -64,5 +64,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **PDF 生成成功！**\n\n📄 您可以在此 PR 的 Artifacts 中下载 `Security-PDF.zip`\n\n💡 [查看 Actions 运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
+              body: '✅ **PDF 生成成功！**\n\n📄 您可以在此 PR 的 Artifacts 中下载 `Security-PDF`\n\n💡 [查看 Actions 运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
             })
