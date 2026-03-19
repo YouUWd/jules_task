@@ -1,78 +1,41 @@
-name: Convert Markdown to PDF with Mermaid
-
+name: Markdown to PDF Converter
 on:
   push:
-    branches:
-      - main
     paths:
-      - 'Security.md'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'Security.md'
+      - '**.md'
   workflow_dispatch:
 
 jobs:
-  convert-to-pdf:
+  convert:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 0
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      - name: Install system dependencies
+      
+      - name: Install dependencies
+        run: npm install -g markdown-pdf
+      
+      - name: Convert all MD files to PDF
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser fonts-noto-cjk
-
-      - name: Install mermaid-cli and md-to-pdf
+          for file in *.md; do
+            if [ -f "$file" ]; then
+              echo "Converting $file to PDF..."
+              markdown-pdf "$file" -o "${file%.md}.pdf"
+            fi
+          done
+      
+      - name: Commit and push PDF files
         run: |
-          npm install -g @mermaid-js/mermaid-cli
-          npm install -g md-to-pdf
-
-      - name: Convert Markdown to PDF
-        env:
-          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
-          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
-        run: |
-          md-to-pdf Security.md --as-html
-
-      - name: List generated files
-        run: ls -lh Security.pdf || echo "PDF not found"
-
-      - name: Upload PDF as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Security-PDF
-          path: Security.pdf
-          retention-days: 30
-
-      - name: Commit and push PDF
-        if: github.event_name == 'push'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add Security.pdf
-          git commit -m "docs: auto-generate Security.pdf with Mermaid diagrams [skip ci]" || echo "No changes to commit"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add *.pdf
+          git diff --cached --quiet || git commit -m "Auto-generate PDF from Markdown files [skip ci]"
           git push
-
-      - name: Create PR comment
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ **PDF 生成成功（含完整拓扑图）！**\n\n📄 Artifacts 中可下载 `Security-PDF`\n\n🔗 [查看运行详情](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})'
-            })
