@@ -24,21 +24,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y chromium-browser npm fonts-noto-cjk
+          sudo apt-get install -y chromium-browser fonts-noto-cjk
 
-      - name: Install npm packages
+      - name: Install mermaid-cli and md-to-pdf
         run: |
-          npm install -g @mermaid-js/mermaid-cli markdown-it md-to-pdf
+          npm install -g @mermaid-js/mermaid-cli
+          npm install -g md-to-pdf
 
       - name: Convert Markdown to PDF
+        env:
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
         run: |
-          npx md-to-pdf --launch-args='["--no-sandbox"]' Security.md
+          md-to-pdf Security.md --as-html
 
       - name: List generated files
-        run: ls -lh *.pdf || echo "No PDF found"
+        run: ls -lh Security.pdf || echo "PDF not found"
 
       - name: Upload PDF as artifact
         uses: actions/upload-artifact@v4
